@@ -1,0 +1,274 @@
+---
+title: "AN 588 Homework 4"
+author: "Akiva Zeff"
+format:
+  html:
+    toc : true
+    toc-depth: 4
+    toc-location: left
+    toc-title: "Sections"
+editor: visual
+theme: journal
+---
+
+## 1. Writing the function
+
+```{r}
+# I've structured my function to first differentiate between one- and two-sample tests, and then act based on the "alternative =" from there.
+
+z.prop.test <- function(p1, n1, p2 = NULL, n2 = NULL, p0, alternative = "two.sided", conf.level = 0.95) {
+  
+  # One-sample tests
+  if (is.null(p2) || is.null(n2)) {
+    
+    z <- (p1 - p0)/sqrt(p0 * (1 - p0)/n1)
+    
+    if (alternative == "less") {
+      p <- pnorm(z, lower.tail = TRUE)
+    } else if (alternative == "greater") {
+      p <- pnorm(z, lower.tail = FALSE)
+    } else { # two-sided
+      p <- 2 * (1 - pnorm(abs(z)))
+    }
+    
+    moe <- qnorm((1 + conf.level)/2) * sqrt(p1 * (1 - p1)/n1) # defining the margin of error
+    lower <- p1 - moe
+    upper <- p1 + moe
+    ci <- c(lower, upper)
+  
+    #Two-sample tests  
+  } else {
+    pstar = ((p1 * n1) + (p2 * n2))/(n1 + n2) # defining the pooled proportion
+    z <- (p2 - p1)/sqrt(pstar * (1 - pstar) * (1/n1 + 1/n2))
+    
+    if (alternative == "less") {
+      p <- pnorm(z, lower.tail = TRUE)
+    } else if (alternative == "greater") {
+      p <- pnorm(z, lower.tail = FALSE)
+    } else { # two-sided
+      p <- 2 * (1 - pnorm(abs(z))) 
+    }
+    
+    crit <- qnorm((1 + conf.level)/2) # finding the critical value
+    moe <- crit * sqrt((p1 * (1 - p1))/n1 + (p2 * (1 - p2))/n2)
+    lower <- (p1 - p2) - moe
+    upper <- (p1 - p2) + moe
+    ci <- c(lower, upper)
+  }
+  
+  # Warnings
+  if (n1 * p1 <= 5) {
+    print(paste("Warning: n1 * p1 =", n1 * p1), quote = FALSE)
+  }
+  if (n1 * (1 - p1) <= 5) {
+    print(paste("Warning: n1 * (1 - p1) =", n1 * (1 - p1)), quote = FALSE)
+  }
+  # These warnings should only apply if p2 and n2 are defined
+  if (!is.null(p2) && !is.null(n2)) {
+    if (n2 * p2 <= 5) {
+    print(paste("Warning: n2 * p2 =", n2 * p2), quote = FALSE)
+    }
+    if (n2 * (1 - p2) <= 5) {
+    print(paste("Warning: n2 * (1 - p2) =", n2 * (1 - p2)), quote = FALSE)
+    }
+  }
+  
+  results <- list(Z = z, P = p, CI = ci) # returning the results as a list
+  return(results)
+}
+```
+
+*Carly*: Overall I think we had a similar result with our functions! I saw that you had mentioned the different in p values-I'm not entirely sure why mine would be larger than 1. Regardless, I think the way you did it looks great! One suggestion I have that I plan on doing would be using data from (I believe) the challenges in Module 10 to really test the functioning of your model. Just a thought! Also, I really like how you simplified the variables you were working with to make the function seem way more manageable!
+
+------------------------------------------------------------------------
+
+## 2. Linear regression models
+
+```{r}
+# Loading the dataset
+library(curl)
+f <- curl("https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN588_Fall23/KamilarAndCooperData.csv")
+d <- read.csv(f, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+d <- d[complete.cases(d$Brain_Size_Species_Mean, d$MaxLongevity_m), ] # removing rows with NAs in the two relevant columns
+```
+
+*Carly*: This a great idea! I did na.omit for the whole data set which I feel like complicated it a tad. Just focusing on the two columns is very smart/intuitive.
+
+### Basic
+
+**Model and equation:**
+
+```{r}
+model <- lm(MaxLongevity_m ~ Brain_Size_Species_Mean, d)
+
+# Function for extracting the equation
+equation <- function(x) {
+  paste0("y = ", round(coef(x)[2], 3), "x", " + ", round(coef(x)[1], 3))
+}
+
+eq <- equation(model)
+```
+
+**Making the plot:**
+
+```{r}
+# Making a simplified dataframe for the plots
+df <- data.frame(cbind(d$Brain_Size_Species_Mean, d$MaxLongevity_m))
+names(df) <- c("Brain_size", "Max_longevity")
+
+library(ggplot2)
+p <- ggplot(data = df, aes(x = Brain_size, y = Max_longevity)) # building the plot
+p <- p + xlab("Mean brain size") + ylab("Max longevity (months)")  # modifying the axis labels
+p <- p + geom_point()  # scatterplot
+p <- p + geom_smooth(method = "lm", color = "cornflowerblue") # adding the regression line
+p <- p + geom_text(x = 200, y = 200, label = eq, color = "cornflowerblue") # adding and positioning the equation
+p
+```
+
+```{r}
+summary(model)
+```
+
+> The estimated 𝛽~1~ is the value for "Brain_Size_Species_Mean" under "Estimate"--i.e. 1.218. Given the extremely small p-value (\<2.2e^-16^), we can safely reject the null hypothesis H~0~ that 𝛽~1~ = 0, and therefore accept the alternative hypothesis H~0~ that 𝛽~1~ ≠ 0.
+
+**Generating confidence and prediction intervals:**
+
+```{r}
+# Calculating confidence interval
+ci <- predict(model, interval = "confidence", level = 0.90)
+
+# Calculating prediction interval
+pi <- predict(model, interval = "prediction", level = 0.90)
+
+# Adding CI and PI to the dataframe
+df <- cbind(df, ci, pi)
+names(df) <- c("Brain_size", "Max_longevity", "CIfit", "CIlwr", "CIupr", "PIfit", "PIlwr", "PIupr")
+
+# Making the plot
+p <- ggplot(df, aes(x = Brain_size, y = Max_longevity))
+p <- p + geom_point(alpha = 0.5)
+
+# Adding equation
+p <- p + geom_text(x = 350, y = 250, label = eq, color = "cornflowerblue")
+
+# Defining colors for the lines and the legend
+p <- p + scale_color_manual(values = c("Regression Line" = "black", "90% CI" = "blue", "90% PI" = "orange"))
+p <- p + geom_line(aes(y = CIfit, color = "Regression Line"))
+
+# Each line type has its own color and style
+p <- p + geom_line(aes(y = CIlwr, color = "90% CI"), linetype = "dashed")
+p <- p + geom_line(aes(y = CIupr, color = "90% CI"), linetype = "dashed")
+
+p <- p + geom_line(aes(y = PIlwr, color = "90% PI"), linetype = "dotted", size = 1)
+p <- p + geom_line(aes(y = PIupr, color = "90% PI"), linetype = "dotted", size = 1)
+
+# Adding labels
+p <- p + labs(x = "Mean brain size", y = "Max longevity (months)", color = "Legend")
+p
+
+```
+
+*Carly*: very minor comment regarding the plot above but I would suggest adding a unit of measurement to Mean brain size (since you have one for longevity). Overall this looks great!
+
+------------------------------------------------------------------------
+
+### Log
+
+**Model and equation:**
+
+```{r}
+model_log <- lm(log(MaxLongevity_m) ~ log(Brain_Size_Species_Mean), d)
+eq_log <- equation(model_log)
+```
+
+**Making the plot:**
+
+```{r}
+df_log <- data.frame(Log_brain_size = log(d$Brain_Size_Species_Mean), Log_max_longevity = log(d$MaxLongevity_m))
+
+# See first plot for annotations
+p <- ggplot(data = df_log, aes(x = Log_brain_size, y = Log_max_longevity))
+p <- p + xlab("Log mean brain size") + ylab("Log max longevity (months)")
+p <- p + geom_point()
+p <- p + geom_smooth(method = "lm", color = "forestgreen")
+p <- p + geom_text(x = 1.5, y = 6, label = eq_log, color = "forestgreen")
+p
+```
+
+```{r}
+summary(model_log)
+```
+
+> The estimated 𝛽~1~ is the value for "Brain_Size_Species_Mean" under "Estimate"--i.e. 0.23415. Given the extremely small p-value (\<2.2e^-16^), we can safely reject the null hypothesis H~0~ that 𝛽~1~ = 0, and therefore accept the alternative hypothesis H~0~ that 𝛽~1~ ≠ 0.
+
+**Generating confidence and prediction intervals:**
+
+```{r}
+# Calculating confidence interval
+ci_log <- predict(model_log, interval = "confidence", level = 0.90)
+
+# Calculating prediction interval
+pi_log <- predict(model_log, interval = "prediction", level = 0.90)
+
+# Adding CI and PI to the dataframe
+df_log <- cbind(df_log, ci_log, pi_log)
+names(df_log) <- c("Log_brain_size", "Log_max_longevity", "CIfit_log", "CIlwr_log", "CIupr_log", "PIfit_log", "PIlwr_log", "PIupr_log")
+
+
+# Making the plot
+p <- ggplot(df_log, aes(x = Log_brain_size, y = Log_max_longevity))
+p <- p + geom_point(alpha = 0.5)
+
+# Adding the equation
+p <- p + geom_text(x = 1.5, y = 6, label = eq_log, color = "cornflowerblue")
+
+# Defining colors for the lines and the legend
+p <- p + scale_color_manual(values = c("Regression Line" = "black", "90% CI" = "blue", "90% PI" = "orange"))
+p <- p + geom_line(aes(y = CIfit_log, color = "Regression Line"))
+
+# Each line type has its own color and style
+p <- p + geom_line(aes(y = CIlwr_log, color = "90% CI"), linetype = "dashed")
+p <- p + geom_line(aes(y = CIupr_log, color = "90% CI"), linetype = "dashed")
+
+p <- p + geom_line(aes(y = PIlwr_log, color = "90% PI"), linetype = "dotted", size = 1)
+p <- p + geom_line(aes(y = PIupr_log, color = "90% PI"), linetype = "dotted", size = 1)
+
+# Adding labels
+p <- p + labs(x = "Log mean brain size", y = "Log max longevity (months)", color = "Legend")
+p
+```
+
+------------------------------------------------------------------------
+
+### Point estimate
+
+```{r}
+predict(model, newdata = data.frame(Brain_Size_Species_Mean = 800), interval = "prediction", level = 0.90)
+```
+
+> So, the model predicts that a species with a brain weight of 800 gm would live \~1200 months, or 100 years. I don't lend much credence to this prediction, as this brain weight falls well outside the range within the dataset - the heaviest brain recorded there is 490 gm. The predictive power of the model will deplete the further outside of the range of its data you go.
+
+------------------------------------------------------------------------
+
+### Which model is better?
+
+Overall, I prefer the log-transformed model. The plots are certainly visually better, as the points are more evenly distributed rather than being mostly clustered on the left side. In addition, the data doesn't look to be fully linear, which suggests that a log transformation could better capture the relationship. I can quickly confirm this with an R-squared test:
+
+```{r}
+summary(model)$r.squared
+summary(model_log)$r.squared
+```
+
+> As we can see, the R-squared value is higher for the log-transformed model. This means that it explains a higher proportion of the variance in the dependent variable than the basic model does, reaffirming that it is the better model in this case.
+
+------------------------------------------------------------------------
+
+## Challenges
+
+1.  Parsing the instructions for part 1 - I had a difficult time figuring out exactly what my function was supposed to be able to do.
+2.  Structuring the function; I ended up settling on a nested structure that first assesses whether it's a one- or two-sample test, and then figures out which type of "alternative" to run.
+3.  Dealing with p2 and n2 when they were null - I had to use "if (!is.null(p2)..."
+4.  Log-transforming everything correctly in part 2.
+5.  Juggling dataframes in part 2, and consolidating down when practical. In the end, it was helpful to remove NAs so that I wasn't dealing with datasets of different lengths.
+
+*Carly*: Overall fantastic job! I felt like your comments were very clear and the way that you went about assessing both the function and data frame modifications when dealing with the log and standard linear regressions were great! I only had a few minor stylistic comments above. Your process made me realize that I should just omit the NAs from the two categories of interest rather than the entirety of my data set.
