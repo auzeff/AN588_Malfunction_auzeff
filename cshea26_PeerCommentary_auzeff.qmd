@@ -261,7 +261,7 @@ summary(model_log)$r.squared
 
 > As we can see, the R-squared value is higher for the log-transformed model. This means that it explains a higher proportion of the variance in the dependent variable than the basic model does, reaffirming that it is the better model in this case.
 
-------------------------------------------------------------------------
+*Carly*: Having it print you the R-squared values is such a good idea!
 
 ## Challenges
 
